@@ -11,7 +11,7 @@ export const setRefreshTokenGetter = (getter) => {
 api.interceptors.request.use(
   (config) => {
     const apiUrl = process.env.REACT_APP_API_URL;
-    if (config.url.startsWith(apiUrl)) {
+    if (apiUrl && config.url && config.url.startsWith(apiUrl)) {
       const token = localStorage.getItem('accessToken');
       if (token) {
         config.headers['Authorization'] = `Bearer ${token}`;
@@ -32,8 +32,8 @@ api.interceptors.response.use(
       originalRequest._retry = true;
 
       try {
-        const refreshToken = getRefreshToken();
-        if (refreshToken) {
+        const refreshToken = typeof getRefreshToken === 'function' ? getRefreshToken() : null;
+        if (refreshToken && apiUrl) {
           const response = await axios.post(`${apiUrl}/base/api/token/refresh/`, { refresh: refreshToken });
 
           if (response.status === 200) {
