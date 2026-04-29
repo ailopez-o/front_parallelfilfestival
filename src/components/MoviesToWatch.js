@@ -48,6 +48,12 @@ const MoviesToWatch = () => {
 	const [selectedGenres, setSelectedGenres] = useState([]);
 
 	const fetchGenres = useCallback(async () => {
+		if (!api_url) {
+			setSnackbarMessage('La API no está configurada correctamente.');
+			setSnackbarSeverity('error');
+			setSnackbarOpen(true);
+			return;
+		}
 		try {
 			const response = await api.get(`${api_url}/film-festival/genres/`);
 			setGenres(response.data);
@@ -57,6 +63,13 @@ const MoviesToWatch = () => {
 	}, []);
 
 	const fetchMovies = useCallback(async () => {
+		if (!api_url) {
+			setLoading(false);
+			setSnackbarMessage('La API no está configurada correctamente.');
+			setSnackbarSeverity('error');
+			setSnackbarOpen(true);
+			return;
+		}
 		setLoading(true);
 		let url = `${api_url}/film-festival/films-to-watch/`;
 		if (selectedGenres.length > 0) {
@@ -174,14 +187,13 @@ const MoviesToWatch = () => {
 		if (isLoggedIn && user && user.is_superuser) {
 			try {
 				await api.post(`${api_url}/film-festival/mark-as-watched/${filmId}/`);
-				window.location.reload();
 				const updatedMovies = moviesToWatch.map(movie => {
 					if (movie.id === filmId) {
 						return { ...movie, isWatched: true };
 					}
 					return movie;
 				});
-				setMoviesToWatch(updatedMovies);
+				setMoviesToWatch(updatedMovies.filter((movie) => movie.id !== filmId));
 				setSnackbarMessage(`Has marcado como vista: ${moviesToWatch.find(movie => movie.id === filmId).tittle}`);
 				setSnackbarSeverity('success');
 				setSnackbarOpen(true);

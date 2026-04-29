@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import api, { setRefreshTokenGetter } from './utils/api'; // Import the custom Axios instance and the setter function
 
 const AuthContext = createContext();
+const STORAGE_KEYS = ['accessToken', 'refreshToken', 'username', 'email', 'is_superuser'];
 
 export const useAuth = () => useContext(AuthContext);
 
@@ -13,6 +14,10 @@ export const AuthProvider = ({ children }) => {
   const apiUrl = process.env.REACT_APP_API_URL;
 
   const refreshAccessToken = useCallback(async () => {
+    if (!refreshToken || !apiUrl) {
+      return null;
+    }
+
     try {
       const response = await api.post(`${apiUrl}/base/api/token/refresh/`, { refresh: refreshToken });
 
@@ -35,7 +40,7 @@ export const AuthProvider = ({ children }) => {
     setRefreshTokenGetter(() => refreshToken); // Provide the function to get the latest refresh token
 
     const initializeAuth = async () => {
-      if (accessToken) {
+      if (accessToken && apiUrl) {
         const validateToken = async (token) => {
           try {
             const response = await api.get(`${apiUrl}/base/api/validate_token/`, {
@@ -72,6 +77,10 @@ export const AuthProvider = ({ children }) => {
   }, [accessToken, refreshToken, apiUrl, refreshAccessToken]);
 
   const login = async (username, password) => {
+    if (!apiUrl) {
+      return 'API URL is not configured';
+    }
+
     try {
       const response = await api.post(`${apiUrl}/base/api/token/`, { username, password });
 
@@ -102,6 +111,10 @@ export const AuthProvider = ({ children }) => {
   };
 
   const register = async (username, email, password) => {
+    if (!apiUrl) {
+      return 'API URL is not configured';
+    }
+
     try {
       const response = await api.post(`${apiUrl}/base/api/register/`, { username, email, password });
 
@@ -123,16 +136,11 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
-    localStorage.removeItem('username');
-    localStorage.removeItem('email');
-    localStorage.removeItem('is_superuser');
+    STORAGE_KEYS.forEach((key) => localStorage.removeItem(key));
     setIsLoggedIn(false);
     setUser(null);
     setAccessToken(null);
     setRefreshToken(null);
-    window.location.reload();
   };
 
   return (

@@ -116,17 +116,19 @@ const MovieSearch = () => {
     };
 
     const getStreamingProviders = async (imdbID) => {
-        const tmdbOptions = {
-            method: 'GET',
-            url: `https://api.themoviedb.org/3/movie/${imdbID}/watch/providers`,
-            params: {
-                api_key: tmdbApiKey,
-            }
-        };
-
         try {
-            const response = await axios.request(tmdbOptions); // Use axios directly
-            return response.data.results?.ES?.flatrate || [];
+            const findResponse = await axios.get(`https://api.themoviedb.org/3/find/${imdbID}`, {
+                params: { api_key: tmdbApiKey, external_source: 'imdb_id' }
+            });
+            const tmdbMovieId = findResponse.data?.movie_results?.[0]?.id;
+            if (!tmdbMovieId) {
+                return [];
+            }
+
+            const providersResponse = await axios.get(`https://api.themoviedb.org/3/movie/${tmdbMovieId}/watch/providers`, {
+                params: { api_key: tmdbApiKey }
+            });
+            return providersResponse.data.results?.ES?.flatrate || [];
         } catch (error) {
             return [];
         }
@@ -145,8 +147,20 @@ const MovieSearch = () => {
             setSnackbarOpen(true);
             return;
         }
+        if (!api_url) {
+            setSnackbarMessage('La API no está configurada correctamente.');
+            setSnackbarSeverity('error');
+            setSnackbarOpen(true);
+            return;
+        }
+        if (!movie.details) {
+            setSnackbarMessage('No se pudieron cargar los detalles de la película.');
+            setSnackbarSeverity('warning');
+            setSnackbarOpen(true);
+            return;
+        }
 
-        const providers = movie.details.providers.map(provider => ({
+        const providers = (movie.details.providers || []).map(provider => ({
             name: provider.provider_name,
             image_url: `https://image.tmdb.org/t/p/original${provider.logo_path}`
         }));
@@ -175,10 +189,11 @@ const MovieSearch = () => {
             setSnackbarMessage('Propuesta enviada con éxito.');
             setSnackbarSeverity('success');
             setSnackbarOpen(true);
-            window.location.reload();
+            setMovies((currentMovies) => currentMovies.filter((currentMovie) => currentMovie.imdbID !== movie.imdbID));
         } catch (error) {
             console.error('Error posting data:', error);
-            setSnackbarMessage('Error: La película ya ha sido propuesta.');
+            const statusCode = error.response?.status;
+            setSnackbarMessage(statusCode === 409 ? 'Error: La película ya ha sido propuesta.' : 'Error al enviar la propuesta.');
             setSnackbarSeverity('error');
             setSnackbarOpen(true);
         }
