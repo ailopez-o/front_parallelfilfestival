@@ -26,8 +26,11 @@ import {
 } from '@mui/material';
 import PersonIcon from '@mui/icons-material/Person';
 import { useAuth } from '../AuthContext';
+import { withScoreMessage } from '../utils/scoring';
+import { assertMutationPersisted, getApiErrorMessage } from '../utils/audit';
 
 const api_url = process.env.REACT_APP_API_URL;
+const DEFAULT_MAX_RATING = Number(process.env.REACT_APP_RATING_MAX || 10);
 
 const FilmsWatched = () => {
     const { isLoggedIn, accessToken } = useAuth();
@@ -43,6 +46,14 @@ const FilmsWatched = () => {
     const [rating, setRating] = useState(0);
 
     useEffect(() => {
+        if (!api_url) {
+            setSnackbarMessage('La API no está configurada correctamente.');
+            setSnackbarSeverity('error');
+            setSnackbarOpen(true);
+            setLoading(false);
+            return;
+        }
+
         const fetchFilms = async () => {
             setLoading(true);
             try {
@@ -68,6 +79,8 @@ const FilmsWatched = () => {
                 } catch (error) {
                     console.error('Error fetching user rated films:', error);
                 }
+            } else {
+                setUserRatedFilms(new Set());
             }
         };
 
@@ -76,32 +89,45 @@ const FilmsWatched = () => {
     }, [isLoggedIn, accessToken]);
 
     const handleRating = async (newValue, filmId) => {
+        if (!isLoggedIn) {
+            setSnackbarMessage('Debe iniciar sesión primero para valorar una película');
+            setSnackbarSeverity('warning');
+            setSnackbarOpen(true);
+            return;
+        }
+        const maxRating = selectedFilm?.rating_scale_max || DEFAULT_MAX_RATING;
+        if (!filmId || !newValue || newValue < 1 || newValue > maxRating) {
+            setSnackbarMessage(`Selecciona una valoración válida entre 1 y ${maxRating}.`);
+            setSnackbarSeverity('warning');
+            setSnackbarOpen(true);
+            return;
+        }
+
         try {
             const postData = { stars: newValue };
-            await api.post(`${api_url}/film-festival/create-rating/${filmId}/`, postData, {
+            const ratingResponse = assertMutationPersisted(await api.post(`${api_url}/film-festival/create-rating/${filmId}/`, postData, {
                 headers: {
                     'Authorization': `Bearer ${accessToken}`
                 }
-            });
-            const updatedFilms = filmsWatched.map(film => {
-                if (film.id === filmId) {
-                    const newVoteCount = film.ratings.length + 1;
-                    const newRatings = [...film.ratings, { stars: newValue, user: 'current_user' }];
-                    const newAverage = newRatings.reduce((acc, curr) => acc + curr.stars, 0) / newRatings.length;
-                    return { ...film, average_rating: newAverage, ratings: newRatings, vote_count: newVoteCount };
-                }
-                return film;
-            });
-            setFilmsWatched(updatedFilms);
-            setUserRatedFilms(new Set(userRatedFilms).add(filmId));
+            }), 'create-rating');
+            const [filmsResponse, ratedResponse] = await Promise.all([
+                api.get(`${api_url}/film-festival/films-watched/`),
+                api.get(`${api_url}/film-festival/user-rated-films/`, {
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`
+                    }
+                })
+            ]);
+            setFilmsWatched(filmsResponse.data);
+            setUserRatedFilms(new Set(ratedResponse.data.map(film => film.id)));
             setRating(0);
-            setSnackbarMessage(`Has votado con un ${newValue}`);
+            setSnackbarMessage(withScoreMessage(`Has votado con un ${newValue}`, ratingResponse.data));
             setSnackbarSeverity('success');
             setSnackbarOpen(true);
             setOpenModal(false);
         } catch (error) {
             console.error('Error posting rating:', error);
-            setSnackbarMessage('Error al enviar la valoración');
+            setSnackbarMessage(getApiErrorMessage(error, 'Error al enviar la valoración'));
             setSnackbarSeverity('error');
             setSnackbarOpen(true);
         }
@@ -194,10 +220,10 @@ const FilmsWatched = () => {
                                             </Box>
                                             <Rating
                                                 name="read-only"
-                                                value={film.average_rating / 2}
+                                                value={film.average_rating || 0}
                                                 readOnly
                                                 precision={0.1}
-                                                max={5}
+                                                max={film.rating_scale_max || DEFAULT_MAX_RATING}
                                             />
                                         </CardContent>
                                     </CardActionArea>
@@ -324,7 +350,7 @@ const FilmsWatched = () => {
                         name="rating-controlled"
                         value={rating}
                         onChange={(event, newValue) => setRating(newValue)}
-                        max={10}
+                        max={selectedFilm?.rating_scale_max || DEFAULT_MAX_RATING}
                         precision={1}
                     />
                 </DialogContent>
@@ -333,7 +359,7 @@ const FilmsWatched = () => {
                         Cancelar
                     </Button>
                     <Button
-                        onClick={() => handleRating(rating, selectedFilm.id)}
+                        onClick={() => handleRating(rating, selectedFilm?.id)}
                         color="primary"
                     >
                         Valorar

@@ -29,6 +29,8 @@ import ThumbUpIcon from '@mui/icons-material/ThumbUp';
 import DeleteForeverIcon from '@mui/icons-material/DeleteForever';
 import ThumbDownIcon from '@mui/icons-material/ThumbDown';
 import VisibilityIcon from '@mui/icons-material/Visibility';
+import { withScoreMessage } from '../utils/scoring';
+import { assertMutationPersisted, getApiErrorMessage } from '../utils/audit';
 
 const api_url = process.env.REACT_APP_API_URL;
 
@@ -48,6 +50,12 @@ const MoviesToWatch = () => {
 	const [selectedGenres, setSelectedGenres] = useState([]);
 
 	const fetchGenres = useCallback(async () => {
+		if (!api_url) {
+			setSnackbarMessage('La API no está configurada correctamente.');
+			setSnackbarSeverity('error');
+			setSnackbarOpen(true);
+			return;
+		}
 		try {
 			const response = await api.get(`${api_url}/film-festival/genres/`);
 			setGenres(response.data);
@@ -57,6 +65,13 @@ const MoviesToWatch = () => {
 	}, []);
 
 	const fetchMovies = useCallback(async () => {
+		if (!api_url) {
+			setLoading(false);
+			setSnackbarMessage('La API no está configurada correctamente.');
+			setSnackbarSeverity('error');
+			setSnackbarOpen(true);
+			return;
+		}
 		setLoading(true);
 		let url = `${api_url}/film-festival/films-to-watch/`;
 		if (selectedGenres.length > 0) {
@@ -105,14 +120,14 @@ const MoviesToWatch = () => {
 		if (isLoggedIn) {
 			try {
 				const votedMovie = moviesToWatch.find(movie => movie.id === filmId);
-				setSnackbarMessage(`Has votado a: ${votedMovie.tittle}`);
-				setSnackbarSeverity('success');
-				setSnackbarOpen(true);
-				await api.post(`${api_url}/film-festival/increase-up-votes/${filmId}/`);
-				await fetchMovies();  // Fetch the updated movies data
-				await fetchUserUpvotedFilms();  // Fetch the updated upvoted films
+					const voteResponse = assertMutationPersisted(await api.post(`${api_url}/film-festival/increase-up-votes/${filmId}/`), 'increase-up-vote');
+					setSnackbarMessage(withScoreMessage(`Has votado a: ${votedMovie.tittle}`, voteResponse.data));
+					setSnackbarSeverity('success');
+					setSnackbarOpen(true);
+					await fetchMovies();  // Fetch the updated movies data
+					await fetchUserUpvotedFilms();  // Fetch the updated upvoted films
 			} catch (error) {
-				setSnackbarMessage('Ha sucedido un error al hacer la petición');
+					setSnackbarMessage(getApiErrorMessage(error, 'Ha sucedido un error al hacer la petición'));
 				setSnackbarSeverity('warning');
 				setSnackbarOpen(true);
 				console.error('Error increasing up-votes:', error);
@@ -128,14 +143,14 @@ const MoviesToWatch = () => {
 		if (isLoggedIn) {
 			try {
 				const votedMovie = moviesToWatch.find(movie => movie.id === filmId);
-				setSnackbarMessage(`Has retirado tu voto de: ${votedMovie.tittle}`);
-				setSnackbarSeverity('success');
-				setSnackbarOpen(true);
-				await api.delete(`${api_url}/film-festival/delete-vote/${filmId}/`);
-				await fetchMovies();  // Fetch the updated movies data
-				await fetchUserUpvotedFilms();  // Fetch the updated upvoted films
+					const voteResponse = assertMutationPersisted(await api.delete(`${api_url}/film-festival/delete-vote/${filmId}/`), 'delete-vote');
+					setSnackbarMessage(withScoreMessage(`Has retirado tu voto de: ${votedMovie.tittle}`, voteResponse.data));
+					setSnackbarSeverity('success');
+					setSnackbarOpen(true);
+					await fetchMovies();  // Fetch the updated movies data
+					await fetchUserUpvotedFilms();  // Fetch the updated upvoted films
 			} catch (error) {
-				setSnackbarMessage('Ha sucedido un error al hacer la petición');
+					setSnackbarMessage(getApiErrorMessage(error, 'Ha sucedido un error al hacer la petición'));
 				setSnackbarSeverity('warning');
 				setSnackbarOpen(true);
 				console.error('Error decreasing up-votes:', error);
@@ -150,19 +165,19 @@ const MoviesToWatch = () => {
 	const deleteMovie = async () => {
 		if (isLoggedIn && user) {
 			try {
-				await api.delete(`${api_url}/film-festival/delete-film/${selectedFilmId}/`, {
+				const deleteResponse = assertMutationPersisted(await api.delete(`${api_url}/film-festival/delete-film/${selectedFilmId}/`, {
 					headers: {
 						'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
 					}
-				});
-				setSnackbarMessage('Película eliminada con éxito.');
+				}), 'delete-film');
+				setSnackbarMessage(withScoreMessage('Película eliminada con éxito.', deleteResponse.data));
 				setSnackbarSeverity('success');
 				setSnackbarOpen(true);
 				await fetchMovies();  // Refresh the movies list
 				setOpenDeleteDialog(false);
 				setSelectedFilmId(null);
 			} catch (error) {
-				setSnackbarMessage('Error al eliminar la película.');
+					setSnackbarMessage(getApiErrorMessage(error, 'Error al eliminar la película.'));
 				setSnackbarSeverity('warning');
 				setSnackbarOpen(true);
 				console.error('Error deleting movie:', error);
@@ -173,20 +188,22 @@ const MoviesToWatch = () => {
 	const markAsWatched = async (filmId) => {
 		if (isLoggedIn && user && user.is_superuser) {
 			try {
-				await api.post(`${api_url}/film-festival/mark-as-watched/${filmId}/`);
-				window.location.reload();
+					const watchedResponse = assertMutationPersisted(await api.post(`${api_url}/film-festival/mark-as-watched/${filmId}/`), 'mark-as-watched');
 				const updatedMovies = moviesToWatch.map(movie => {
 					if (movie.id === filmId) {
 						return { ...movie, isWatched: true };
 					}
 					return movie;
 				});
-				setMoviesToWatch(updatedMovies);
-				setSnackbarMessage(`Has marcado como vista: ${moviesToWatch.find(movie => movie.id === filmId).tittle}`);
+				setMoviesToWatch(updatedMovies.filter((movie) => movie.id !== filmId));
+					setSnackbarMessage(withScoreMessage(`Has marcado como vista: ${moviesToWatch.find(movie => movie.id === filmId).tittle}`, watchedResponse.data));
 				setSnackbarSeverity('success');
 				setSnackbarOpen(true);
 			} catch (error) {
-				console.error('Error marking as watched:', error);
+					setSnackbarMessage(getApiErrorMessage(error, 'Error al marcar la película como vista.'));
+					setSnackbarSeverity('warning');
+					setSnackbarOpen(true);
+					console.error('Error marking as watched:', error);
 			}
 		} else {
 			setSnackbarMessage(isLoggedIn ? 'Debe ser superusuario para marcar como vista.' : 'Debe iniciar sesión primero.');

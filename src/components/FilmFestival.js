@@ -20,7 +20,6 @@ const FilmFestival = () => {
 
   const handleLogout = () => {
     logout();
-    window.location.reload();
   };
 
   useEffect(() => {
